@@ -2,7 +2,7 @@ import os
 import re
 import subprocess
 import click
-from distutils.spawn import find_executable
+from distutils.spawn import find_executable  # Add this line
 import shutil
 import sys
 
@@ -74,9 +74,6 @@ def decompile_apk(input_apk, output_directory, jadx_path):
     except Exception as e:
         print(f"\033[91mError during decompilation: {e}\033[0m")  # Print in red
 
-import subprocess
-import re
-
 def analyze_apk(input_apk, output_file):
     findings = []
 
@@ -135,7 +132,6 @@ def analyze_apk(input_apk, output_file):
         print(f"\033[91mError during analysis: {e}\033[0m")  # Print in red
 
 
-
 @click.command()
 @click.argument('input_apk', type=click.Path(exists=True, dir_okay=False))
 @click.option('--output-dir', '-o', type=click.Path(), help='Specify output directory for decompiled files')
@@ -156,3 +152,4 @@ def main(input_apk, output_dir, output_file):
 
 if __name__ == '__main__':
     main()
+
