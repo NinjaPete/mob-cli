@@ -11,7 +11,7 @@ def check_apksigner():
     if shutil.which("apksigner") is None:
         print("apksigner is not installed. It is part of the Android SDK Build Tools.")
         print("Please make sure you have the Android SDK Build Tools installed.")
-        print("Do you want to install Android SDK Build Tools now? (y/n)")
+        print("Would you like instructions on how to install Android SDK Build Tools now? (y/n)")
         choice = input().strip().lower()
         if choice == "y":
             # Provide instructions on how to install Android SDK Build Tools manually
