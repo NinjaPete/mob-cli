@@ -99,7 +99,7 @@ def analyze_apk(input_apk, output_file):
     
     try:
         # Add analysis logic based on specified criteria
-        findings.append("Analysis findings for: " + input_apk)
+        findings.append("\nAnalysis findings for: " + input_apk)
         findings.append("")  # Add space
         findings.append("\033[1;94mAndroid Version Check:\033[0m")  # Make Android Version Check bold
 
@@ -110,7 +110,7 @@ def analyze_apk(input_apk, output_file):
         check_and_append_target_sdk_version(findings, target_sdk)
         check_and_append_min_sdk_version(findings, min_sdk)
 
-        print("\033[93m[*]\033[0m","Android Versions Extracted.")  # Print section completion
+        print("\033[32m[*]\033[0m","Android Versions Extracted.")  # Print section completion
         
         # Add space before APK Signing Schemes section
         findings.append("")  # Add space
@@ -122,10 +122,10 @@ def analyze_apk(input_apk, output_file):
 
         append_signing_schemes(findings, signing_schemes)
 
-        print("\033[93m[*]\033[0m","APK Signing Schemes Extracted.")  # Print section completion
+        print("\033[32m[*]\033[0m","APK Signing Schemes Extracted.")  # Print section completion
 
         # Check for vulnerable Janus exploit
-        print("\033[93m[*]\033[0m","Checking for Janus Vulnerability...")  # Print section completion
+        print("\033[32m[*]\033[0m","Checking for Janus Vulnerability...")  # Print section completion
         check_vulnerable_janus(findings, aapt_output, signing_schemes)
 
         # Write findings to the specified output file
@@ -167,6 +167,9 @@ def check_and_append_target_sdk_version(findings, target_sdk):
     if target_sdk is not None:
         target_android_version = map_sdk_version_to_android_version(target_sdk)
         findings.append(f"Target SDK Version: {target_sdk} - {target_android_version}")
+        if target_sdk <= 30:  # Android 11 or below
+            version_warning = f"\033[91mWARNING: The application is targeting Android version {target_sdk}, which is deprecated and not recommended for new development. Ensure that you have the latest APK.\033[0m"
+            findings.append(version_warning)
 
 def extract_signing_schemes(apksigner_output):
     signing_schemes = {"v1": False, "v2": False, "v3": False, "v4": False}
@@ -185,15 +188,15 @@ def check_vulnerable_janus(findings, aapt_output, signing_schemes):
     sdk_version_match = re.search(r"sdkVersion:'(\d+)'", aapt_output)
     if sdk_version_match:
         sdk_version = int(sdk_version_match.group(1))
-        print("\033[93m[*]\033[0m","Detected minSdkVersion:", sdk_version)
+        print(" \033[93m[*]\033[0m","Detected minSdkVersion:", sdk_version)
         if 21 <= sdk_version <= 26 and signing_schemes["v1"] and not any(signing_schemes[scheme] for scheme in ["v2", "v3", "v4"]):
             janus_warning = "\033[91mWARNING: The application may be vulnerable to the Janus exploit. It is signed with v1 only and targets Android versions 5.0 to 7.0.\033[0m"
             findings.append(janus_warning)
-            print("\033[93m[*]\033[0m","\033[91mPossibly vulnerable to Janus (CVE-2017–13156)\033[0m")
+            print(" \033[93m[*]\033[0m","\033[91mPossibly vulnerable to Janus (CVE-2017–13156)\033[0m")
         elif 21 <= sdk_version <= 24 and signing_schemes["v1"] and any(signing_schemes[scheme] for scheme in ["v2", "v3", "v4"]):
             janus_warning = "\033[91mWARNING: The application may be vulnerable to the Janus exploit. It is signed with v1 and also v2, v3, or both schemes, and targets Android versions 5.0 to 7.0.\033[0m"
             findings.append(janus_warning)
-            print("\033[93m[*]\033[0m","\033[91mPossibly vulnerable to Janus (CVE-2017–13156)\033[0m")
+            print(" \033[93m[*]\033[0m","\033[91mPossibly vulnerable to Janus (CVE-2017–13156)\033[0m")
 
 def map_sdk_version_to_android_version(sdk_version):
     # Map SDK version to Android version
