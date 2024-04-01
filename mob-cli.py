@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+import sys
 import click
 from distutils.spawn import find_executable
 import sys
@@ -10,6 +11,7 @@ from zipfile import ZipFile
 import shutil
 import io
 from pathlib import Path
+import requests
 
 def print_title():
     print("""
@@ -32,14 +34,42 @@ def check_apksigner(input_apk):
     except FileNotFoundError:
         print("\033[91mapksigner is not installed and is required for this script to function. It is part of the Android SDK Build Tools.")
         print("This tool assumes you have Android SDK Build Tools installed.")
-        print("Please install Android SDK Build Tools manually.")
-        print("To install Android SDK Build Tools, please follow these steps:")
-        print("1. Download and install Android Studio from https://developer.android.com/studio")
-        print("2. Once installed, open Android Studio and go to Tools > SDK Manager.")
-        print("3. In the SDK Manager, select 'Android SDK Build-Tools' under the 'SDK Tools' tab.")
-        print("4. Click 'Apply' to install the selected packages.")
-        print("5. Make sure the 'sdkmanager' and 'apksigner' tools are added to your system PATH.")
-        sys.exit()
+        choice = input("Do you want to attempt to install apksigner? (Y/n): ").lower()
+        if choice in ['y', 'yes']:
+            print("Attempting to install apksigner using apt...")
+            try:
+                subprocess.run(["sudo", "apt", "update"])
+                subprocess.run(["sudo", "apt", "install", "-y", "apksigner"])
+                print("\033[92mapksigner has been installed successfully.\033[0m")
+            except Exception as e:
+                print("\033[91mError installing apksigner:", e, "\033[0m")
+                print("\033[91mPlease install apksigner manually.\033[0m")
+                sys.exit()
+        else:
+            print("\033[91mPlease install apksigner manually.\033[0m")
+            sys.exit()
+
+
+def check_aapt():
+    try:
+        subprocess.check_output(["aapt", "version"])
+    except FileNotFoundError:
+        print("\033[91maapt is not installed and is required for this script to function. It is part of the Android SDK Build Tools.")
+        print("This tool assumes you have Android SDK Build Tools installed.")
+        choice = input("Do you want to attempt to install aapt? (Y/n): ").lower()
+        if choice in ['y', 'yes']:
+            print("Attempting to install aapt using apt...")
+            try:
+                subprocess.run(["sudo", "apt", "update"])
+                subprocess.run(["sudo", "apt", "install", "-y", "aapt"])
+                print("\033[92maapt has been installed successfully.\033[0m")
+            except Exception as e:
+                print("\033[91mError installing aapt:", e, "\033[0m")
+                print("\033[91mPlease install aapt manually.\033[0m")
+                sys.exit()
+        else:
+            print("Please install aapt manually.")
+            sys.exit()
 
 def check_jadx():
     jadx_path = find_executable("jadx")
@@ -49,7 +79,7 @@ def check_jadx():
         print("\033[91mJADX is not found in your system.\033[0m")  # Print in red
         valid_choices = {"yes": True, "y": True, "no": False, "n": False}
         while True:
-            choice = input("Do you want to download JADX now? (Y/n): ").lower()
+            choice = input("Do you want to download JADX now and temporarily set it in the environment path? (Y/n): ").lower()
             if choice in valid_choices:
                 if valid_choices[choice]:
                     download_jadx()
@@ -62,16 +92,33 @@ def check_jadx():
 
 def download_jadx():
     jadx_url = "https://github.com/skylot/jadx/releases/download/v1.2.0/jadx-1.2.0.zip"
+    jadx_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "jadx")
+    jadx_executable_path = os.path.join(jadx_dir, "bin", "jadx")
     try:
-        with closing(urlopen(jadx_url)) as jadx_zip:
-            with ZipFile(io.BytesIO(jadx_zip.read())) as zfile:
-                zfile.extractall(os.path.join(str(Path(__file__).parent), "jadx"))
-        jadx_executable_path = find_executable("jadx")
+        print("Downloading JADX...")
+        with requests.get(jadx_url, stream=True) as response:
+            with open("jadx.zip", "wb") as f:
+                shutil.copyfileobj(response.raw, f)
+        
+        with ZipFile("jadx.zip", "r") as zip_ref:
+            zip_ref.extractall(jadx_dir)
+        
+        os.remove("jadx.zip")
+        
         os.chmod(jadx_executable_path, 0o755)  # Setting permission to make it executable
-        print("\033[92mJADX has been downloaded and installed successfully.\033[0m")  # Print in green
+        
+        print("\033[92mJADX has been downloaded successfully.\033[0m")
+        
+        # Add jadx directory to PATH
+        os.environ['PATH'] += os.pathsep + os.path.join(jadx_dir, "bin")
+        
+        print("\033[92mJADX has been temporarily added to your environment path.\033[0m")
+        
+        return jadx_executable_path
     except Exception as e:
-        print("\033[91mError downloading JADX: {e}\033[0m")  # Print in red
-        exit()
+        print("\033[91mError downloading JADX:", e, "\033[0m")  # Print in red
+        return None
+
 
 def decompile_apk(input_apk, output_directory, jadx_path):
     try:
@@ -226,6 +273,7 @@ def map_sdk_version_to_android_version(sdk_version):
 def main(input_apk, output_dir, output_file):
     print_title()  # Print the title
     check_apksigner(input_apk)  # Check for apksigner availability
+    check_aapt() # Check for aapt
 
     jadx_path = check_jadx()
     # Check if output directory is provided, otherwise use current working directory
