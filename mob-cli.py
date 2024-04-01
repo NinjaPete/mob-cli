@@ -23,7 +23,7 @@ def check_apksigner(input_apk):
     try:
         subprocess.check_output(["apksigner", "verify", input_apk], stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as e:
-        print("\033[91mWARNING: This APK is not signed or the signature is not valid.\033[0m")
+        print("\033[91m[*]\033[0m \033[91mWARNING:\033[0m This APK is not signed or the signature is not valid.")
         print("\033[91mThis may indicate a security risk. Please ensure the APK is properly signed before distribution.\033[0m")
         print()
     except FileNotFoundError:
@@ -207,7 +207,7 @@ def check_and_append_min_sdk_version(findings, min_sdk):
         min_android_version = map_sdk_version_to_android_version(min_sdk)
         findings.append(f"Minimum SDK Version: {min_sdk} - {min_android_version}")
         if min_sdk <= 30:  # Android 11 or below
-            version_warning = f"\033[91mWARNING: The app is compatible with Android version {min_sdk}, which is deprecated and not recommended for new development.\033[0m"
+            version_warning = f"\033[91m[*]\033[0m \033[91mWARNING:\033[0m The app is compatible with Android version {min_sdk}, which is deprecated and not recommended for new development."
             findings.append(version_warning)
         elif min_sdk >= 31:  # Android 12 and above
             version_info = f"\033[32mINFO: This app is compatible with Android SDK versions {min_sdk} and up, which are all currently supported.\033[0m"
@@ -218,7 +218,7 @@ def check_and_append_target_sdk_version(findings, target_sdk):
         target_android_version = map_sdk_version_to_android_version(target_sdk)
         findings.append(f"Target SDK Version: {target_sdk} - {target_android_version}")
         if target_sdk <= 30:
-            version_warning = f"\033[91mWARNING: The application is targeting Android version {target_sdk}, which is deprecated and not recommended for new development. Ensure that you have the latest APK.\033[0m"
+            version_warning = f"\033[91m[*]\033[0m \033[91mWARNING:\033[0m The application is targeting Android version {target_sdk}, which is deprecated and not recommended for new development. Ensure that you have the latest APK."
             findings.append(version_warning)
 
 def extract_signing_schemes(apksigner_output):
@@ -240,13 +240,13 @@ def check_vulnerable_janus(findings, aapt_output, signing_schemes):
         sdk_version = int(sdk_version_match.group(1))
         print(" \033[93m[*]\033[0m","Detected minSdkVersion:", sdk_version)
         if 21 <= sdk_version <= 26 and signing_schemes["v1"] and not any(signing_schemes[scheme] for scheme in ["v2", "v3", "v4"]):
-            janus_warning = "\033[91mWARNING: The application may be vulnerable to the Janus exploit. It is signed with v1 only and targets Android versions 5.0 to 7.0.\033[0m"
+            janus_warning = "\033[91m[*]\033[0m \033[91mWARNING:\033[0m The application may be vulnerable to the Janus exploit. It is signed with v1 only and targets Android versions 5.0 to 7.0."
             findings.append(janus_warning)
-            print(" \033[93m[*]\033[0m","\033[91mPossibly vulnerable to Janus (CVE-2017–13156)\033[0m")
+            print(" \033[93m[*]\033[0m","Possibly vulnerable to Janus (CVE-2017–13156)")
         elif 21 <= sdk_version <= 24 and signing_schemes["v1"] and any(signing_schemes[scheme] for scheme in ["v2", "v3", "v4"]):
-            janus_warning = "\033[91mWARNING: The application may be vulnerable to the Janus exploit. It is signed with v1 and also v2, v3, or both schemes, and targets Android versions 5.0 to 7.0.\033[0m"
+            janus_warning = "\033[91m[*]\033[0m \033[91mWARNING:\033[0m The application may be vulnerable to the Janus exploit. It is signed with v1 and also v2, v3, or both schemes, and targets Android versions 5.0 to 7.0.\033"
             findings.append(janus_warning)
-            print(" \033[93m[*]\033[0m","\033[91mPossibly vulnerable to Janus (CVE-2017–13156)\033[0m")
+            print(" \033[93m[*]\033[0m","\Possibly vulnerable to Janus (CVE-2017–13156)")
 
 def map_sdk_version_to_android_version(sdk_version):
     android_versions = {
@@ -296,7 +296,7 @@ def check_backup_settings(findings, manifest_path, debuggable):
             findings.append("\033[93m[*]\033[0m android:allowBackup=\"false\" attribute is not explicitly set. Consider setting it to prevent unauthorised data backups.")
         
         if 'android:allowBackup="true"' in manifest_content and debuggable:
-            findings.append("\033[91mWARNING:\033[0m Backup Settings: Both android:allowBackup=\"true\" and android:debuggable=\"true\" are present. This configuration may pose security risks as it allows unauthorised data backups via adb when usb debugging is enabled.")
+            findings.append("\033[91m[*]\033[0m \033[91mWARNING:\033[0m Backup Settings: Both android:allowBackup=\"true\" and android:debuggable=\"true\" are present. This configuration may pose security risks as it allows unauthorised data backups via adb when usb debugging is enabled.")
             
     except Exception as e:
         findings.append("\033[91mERROR:\033[0m Error occurred while checking backup settings.")
@@ -314,6 +314,16 @@ def check_network_security(findings, manifest_path, output_dir):
             network_security_config_path = os.path.join(output_dir, "resources", "res", "xml", "network_security_config.xml")
             if os.path.isfile(network_security_config_path):
                 findings.append("Custom network security configuration file found: network_security_config.xml")
+                
+                with open(network_security_config_path, 'r') as ns_config_file:
+                    ns_config_content = ns_config_file.read()
+                
+                if 'cleartextTrafficPermitted="true"' in ns_config_content:
+                    findings.append("\033[91m[*]\033[0m \033[91mWARNING:\033[0m Cleartext traffic is permitted. This can pose security risks, especially when transmitting sensitive data.")
+                else:
+                    findings.append("\033[32m[*]\033[0m Cleartext traffic is not permitted.")
+                    
+                
             else:
                 findings.append("\033[91mERROR:\033[0m Custom network security configuration file 'network_security_config.xml' is missing.")
         else:
@@ -322,6 +332,7 @@ def check_network_security(findings, manifest_path, output_dir):
     except Exception as e:
         findings.append("\033[91mERROR:\033[0m Error occurred while checking network security configurations.")
         print(f"\033[91mError checking network security configurations: {e}\033[0m")
+
 
 def extract_exported_activities(manifest_path):
     exported_activities = []
