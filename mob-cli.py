@@ -3,8 +3,6 @@ import re
 import subprocess
 import sys
 import click
-from distutils.spawn import find_executable
-import sys
 from contextlib import closing
 from urllib.request import urlopen
 from zipfile import ZipFile
@@ -72,7 +70,7 @@ def check_aapt():
             sys.exit()
 
 def check_jadx():
-    jadx_path = find_executable("jadx")
+    jadx_path = shutil.which("jadx")
     if jadx_path:
         return jadx_path
     else:
@@ -83,7 +81,7 @@ def check_jadx():
             if choice in valid_choices:
                 if valid_choices[choice]:
                     download_jadx()
-                    return find_executable("jadx")
+                    return shutil.which("jadx")
                 else:
                     print("\033[91mJADX is required for this tool to function. Exiting.\033[0m")  # Print in red
                     exit()
