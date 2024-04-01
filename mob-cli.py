@@ -141,7 +141,8 @@ def decompile_apk(input_apk, output_directory, jadx_path):
 def analyze_apk(input_apk, output_file):
     findings = []
     sdk_version = None  # Initialize sdk_version variable
-    
+    debuggable = False  # Initialize debuggable variable
+
     try:
         # Add analysis logic based on specified criteria
         findings.append("\nAnalysis findings for: " + input_apk)
@@ -157,11 +158,10 @@ def analyze_apk(input_apk, output_file):
 
         print("\033[32m[*]\033[0m","Android Versions Extracted.")  # Print section completion
         
-        # Add space before APK Signing Schemes section
+        # Check for APK signing schemes using apksigner        
         findings.append("")  # Add space
         findings.append("\033[1;94mAPK Signing Schemes:\033[0m")  # Make APK Signing Schemes bold
 
-        # Check for APK signing schemes using apksigner
         apksigner_output = subprocess.check_output(["apksigner", "verify", "-verbose", input_apk], text=True)
         signing_schemes = extract_signing_schemes(apksigner_output)
 
@@ -172,6 +172,13 @@ def analyze_apk(input_apk, output_file):
         # Check for vulnerable Janus exploit
         print("\033[32m[*]\033[0m","Checking for Janus Vulnerability...")  # Print section completion
         check_vulnerable_janus(findings, aapt_output, signing_schemes)
+
+        # Android Manifest Checks
+        findings.append("")  # Add space
+        findings.append("\033[1;94mAndroid Manifest Findings:\033[0m")
+        debuggable = check_debuggable(findings, aapt_output)
+
+        print("\033[32m[*]\033[0m","Completed Android Manifest Checks")  # Print section completion
 
         # Write findings to the specified output file
         with open(output_file, 'w') as f:
@@ -263,6 +270,24 @@ def map_sdk_version_to_android_version(sdk_version):
     }
     return android_versions.get(sdk_version, "Unknown Android Version")
 
+def extract_android_manifest(input_apk):
+    try:
+        aapt_output = subprocess.check_output(["aapt", "dump", "xmltree", input_apk, "AndroidManifest.xml"], text=True)
+        return aapt_output
+    except Exception as e:
+        print(f"\033[91mError extracting Android Manifest: {e}\033[0m")  # Print in red
+        return None
+
+def check_debuggable(findings, android_manifest):
+    debuggable_match = re.search(r"android:debuggable=['\"](true)['\"]", android_manifest)
+    if debuggable_match:
+        debuggable_value = debuggable_match.group(1)
+        if debuggable_value.lower() == 'true':
+            findings.append("\033[91mWARNING: Debuggable set to true.\033[0m")
+            return True
+    findings.append("Debuggable set to false.")
+    return False
+
 @click.command()
 @click.argument('input_apk', type=click.Path(exists=True, dir_okay=False))
 @click.option('--output-dir', '-o', type=click.Path(), help='Specify output directory for decompiled files')
@@ -282,6 +307,9 @@ def main(input_apk, output_dir, output_file):
 
     # Perform decompilation
     decompile_apk(input_apk, output_dir, jadx_path)
+
+    # Read Android Manifest content
+    android_manifest = extract_android_manifest(input_apk)
 
     # Perform analysis
     analyze_apk(input_apk, output_file)
