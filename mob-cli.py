@@ -3,13 +3,10 @@ import re
 import subprocess
 import sys
 import click
-from contextlib import closing
-from urllib.request import urlopen
-from zipfile import ZipFile
 import shutil
-import io
-from pathlib import Path
 import requests
+import xml.etree.ElementTree as ET  # Import ElementTree module
+from zipfile import ZipFile
 
 def print_title():
     print("""
@@ -138,7 +135,7 @@ def decompile_apk(input_apk, output_directory, jadx_path):
     except Exception as e:
         print(f"\033[91mError during decompilation: {e}\033[0m")  # Print in red
 
-def analyze_apk(input_apk, output_file):
+def analyze_apk(input_apk, output_file, output_dir):  # Add output_dir as an argument
     findings = []
     sdk_version = None  # Initialize sdk_version variable
     debuggable = False  # Initialize debuggable variable
@@ -173,10 +170,19 @@ def analyze_apk(input_apk, output_file):
         print("\033[32m[*]\033[0m","Checking for Janus Vulnerability...")  # Print section completion
         check_vulnerable_janus(findings, aapt_output, signing_schemes)
 
+        # Extracted AndroidManifest.xml path
+        manifest_path = os.path.join(output_dir, "resources", "AndroidManifest.xml")
+
         # Android Manifest Checks
         findings.append("")  # Add space
         findings.append("\033[1;94mAndroid Manifest Findings:\033[0m")
         debuggable = check_debuggable(findings, aapt_output)
+
+        # Extract exported activities from AndroidManifest.xml
+        exported_activities = extract_exported_activities(manifest_path)
+        findings.append("\n Exported Activities:")
+        for activity in exported_activities:
+            findings.append(activity)
 
         print("\033[32m[*]\033[0m","Completed Android Manifest Checks")  # Print section completion
 
@@ -288,6 +294,22 @@ def check_debuggable(findings, android_manifest):
     findings.append("Debuggable set to false.")
     return False
 
+def extract_exported_activities(manifest_path):
+    exported_activities = []
+    tree = ET.parse(manifest_path)
+    root = tree.getroot()
+
+    # Iterate through all activity elements
+    for activity in root.findall('.//activity'):
+        activity_name = activity.get('{http://schemas.android.com/apk/res/android}name')
+        exported = activity.get('{http://schemas.android.com/apk/res/android}exported')
+        
+        # Check if the activity is exported
+        if exported == 'true':
+            exported_activities.append(activity_name)
+
+    return exported_activities
+
 @click.command()
 @click.argument('input_apk', type=click.Path(exists=True, dir_okay=False))
 @click.option('--output-dir', '-o', type=click.Path(), help='Specify output directory for decompiled files')
@@ -308,11 +330,9 @@ def main(input_apk, output_dir, output_file):
     # Perform decompilation
     decompile_apk(input_apk, output_dir, jadx_path)
 
-    # Read Android Manifest content
-    android_manifest = extract_android_manifest(input_apk)
-
     # Perform analysis
-    analyze_apk(input_apk, output_file)
+    analyze_apk(input_apk, output_file, output_dir)
 
 if __name__ == '__main__':
     main()
+
