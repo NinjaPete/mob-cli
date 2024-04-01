@@ -5,7 +5,7 @@ import sys
 import click
 import shutil
 import requests
-import xml.etree.ElementTree as ET  # Import ElementTree module
+import xml.etree.ElementTree as ET
 from zipfile import ZipFile
 
 def print_title():
@@ -25,7 +25,7 @@ def check_apksigner(input_apk):
     except subprocess.CalledProcessError as e:
         print("\033[91mWARNING: This APK is not signed or the signature is not valid.\033[0m")
         print("\033[91mThis may indicate a security risk. Please ensure the APK is properly signed before distribution.\033[0m")
-        print()  # Add a newline after the warning message
+        print()
     except FileNotFoundError:
         print("\033[91mapksigner is not installed and is required for this script to function. It is part of the Android SDK Build Tools.")
         print("This tool assumes you have Android SDK Build Tools installed.")
@@ -71,7 +71,7 @@ def check_jadx():
     if jadx_path:
         return jadx_path
     else:
-        print("\033[91mJADX is not found in your system.\033[0m")  # Print in red
+        print("\033[91mJADX is not found in your system.\033[0m")
         valid_choices = {"yes": True, "y": True, "no": False, "n": False}
         while True:
             choice = input("Do you want to download JADX now and temporarily set it in the environment path? (Y/n): ").lower()
@@ -80,7 +80,7 @@ def check_jadx():
                     download_jadx()
                     return shutil.which("jadx")
                 else:
-                    print("\033[91mJADX is required for this tool to function. Exiting.\033[0m")  # Print in red
+                    print("\033[91mJADX is required for this tool to function. Exiting.\033[0m")
                     exit()
             else:
                 print("Please respond with 'yes' or 'no' (or 'y' or 'n').")
@@ -100,7 +100,7 @@ def download_jadx():
         
         os.remove("jadx.zip")
         
-        os.chmod(jadx_executable_path, 0o755)  # Setting permission to make it executable
+        os.chmod(jadx_executable_path, 0o755)
         
         print("\033[92mJADX has been downloaded successfully.\033[0m")
         
@@ -118,7 +118,6 @@ def download_jadx():
 def decompile_apk(input_apk, output_directory, jadx_path):
     try:
         print("Decompiling APK")
-        # Perform decompilation using JADX
         process = subprocess.Popen([jadx_path, input_apk, "-d", output_directory], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         while True:
             output = process.stdout.readline()
@@ -133,29 +132,26 @@ def decompile_apk(input_apk, output_directory, jadx_path):
         
         print(f"Decompilation successful. Decompiled files saved in: {decompiled_folder}")
     except Exception as e:
-        print(f"\033[91mError during decompilation: {e}\033[0m")  # Print in red
+        print(f"\033[91mError during decompilation: {e}\033[0m")
 
-def analyze_apk(input_apk, output_file, output_dir):  # Add output_dir as an argument
+def analyze_apk(input_apk, output_file, output_dir):
     findings = []
-    sdk_version = None  # Initialize sdk_version variable
-    debuggable = False  # Initialize debuggable variable
+    sdk_version = None
+    debuggable = False
 
     try:
-        # Add analysis logic based on specified criteria
         findings.append("\nAnalysis findings for: " + input_apk)
-        findings.append("")  # Add space
-        findings.append("\033[1;94mAndroid Version Check:\033[0m")  # Make Android Version Check bold
+        findings.append("")
+        findings.append("\033[1;94mAndroid Version Check:\033[0m")
 
-        # Extract minSdkVersion and targetSdkVersion using aapt
         aapt_output = subprocess.check_output(["aapt", "dump", "badging", input_apk], text=True)
         min_sdk, target_sdk = extract_sdk_versions(aapt_output)
 
         check_and_append_target_sdk_version(findings, target_sdk)
         check_and_append_min_sdk_version(findings, min_sdk)
 
-        print("\033[32m[*]\033[0m","Android Versions Extracted.")  # Print section completion
-        
-        # Check for APK signing schemes using apksigner        
+        print("\033[32m[*]\033[0m","Android Versions Extracted.")
+           
         findings.append("")
         findings.append("\033[1;94mAPK Signing Schemes:\033[0m")
 
@@ -166,45 +162,38 @@ def analyze_apk(input_apk, output_file, output_dir):  # Add output_dir as an arg
 
         print("\033[32m[*]\033[0m","APK Signing Schemes Extracted.")
 
-        # Check for vulnerable Janus exploit
         print("\033[32m[*]\033[0m","Checking for Janus Vulnerability...")
         check_vulnerable_janus(findings, aapt_output, signing_schemes)
 
-        # Extracted AndroidManifest.xml path
         manifest_path = os.path.join(output_dir, "resources", "AndroidManifest.xml")
 
-        # Android Manifest Checks
-        findings.append("")  # Add space
+        findings.append("")
         findings.append("\033[1;94mAndroid Manifest Findings:\033[0m")
         findings.append("\033[93m\n  General:\033[0m")
         debuggable = check_debuggable(findings, aapt_output)
         check_backup_settings(findings, manifest_path, debuggable)
         check_network_security(findings, manifest_path, output_dir)
 
-        # Extract exported activities from AndroidManifest.xml
         exported_activities = extract_exported_activities(manifest_path)
         findings.append("\033[93m\n Exported Activities:\033[0m")
         for activity in exported_activities:
             findings.append(activity)
 
-        print("\033[32m[*]\033[0m","Completed Android Manifest Checks")  # Print section completion
+        print("\033[32m[*]\033[0m","Completed Android Manifest Checks")
 
-        # Write findings to the specified output file
         with open(output_file, 'w') as f:
             f.write('\n'.join(findings))
 
-        # Print findings to the terminal
         for finding in findings:
             print(finding)
 
     except Exception as e:
-        print(f"\033[91mError during analysis: {e}\033[0m")  # Print in red
+        print(f"\033[91mError during analysis: {e}\033[0m")
         findings.append("Error during analysis: " + str(e))
-        # Write findings to the specified output file in case of an error
         with open(output_file, 'w') as f:
             f.write('\n'.join(findings))
         
-    print(f"\nAnalysis complete. Findings written to: {output_file}\n")  # Add spaces after printing
+    print(f"\nAnalysis complete. Findings written to: {output_file}\n")
 
 def extract_sdk_versions(aapt_output):
     min_sdk_match = re.search(r"sdkVersion:'(\d+)'", aapt_output)
@@ -228,7 +217,7 @@ def check_and_append_target_sdk_version(findings, target_sdk):
     if target_sdk is not None:
         target_android_version = map_sdk_version_to_android_version(target_sdk)
         findings.append(f"Target SDK Version: {target_sdk} - {target_android_version}")
-        if target_sdk <= 30:  # Android 11 or below
+        if target_sdk <= 30:
             version_warning = f"\033[91mWARNING: The application is targeting Android version {target_sdk}, which is deprecated and not recommended for new development. Ensure that you have the latest APK.\033[0m"
             findings.append(version_warning)
 
@@ -260,7 +249,6 @@ def check_vulnerable_janus(findings, aapt_output, signing_schemes):
             print(" \033[93m[*]\033[0m","\033[91mPossibly vulnerable to Janus (CVE-2017–13156)\033[0m")
 
 def map_sdk_version_to_android_version(sdk_version):
-    # Map SDK version to Android version
     android_versions = {
         21: "Android 5.0 (Lollipop)",
         22: "Android 5.1 (Lollipop)",
@@ -284,7 +272,7 @@ def extract_android_manifest(input_apk):
         aapt_output = subprocess.check_output(["aapt", "dump", "xmltree", input_apk, "AndroidManifest.xml"], text=True)
         return aapt_output
     except Exception as e:
-        print(f"\033[91mError extracting Android Manifest: {e}\033[0m")  # Print in red
+        print(f"\033[91mError extracting Android Manifest: {e}\033[0m")
         return None
 
 def check_debuggable(findings, android_manifest):
@@ -299,19 +287,14 @@ def check_debuggable(findings, android_manifest):
 
 def check_backup_settings(findings, manifest_path, debuggable):
     try:
-        # Read AndroidManifest.xml content
         with open(manifest_path, 'r') as manifest_file:
             manifest_content = manifest_file.read()
-        
-        # Check if android:allowBackup="false" is explicitly set
+
         if 'android:allowBackup="false"' in manifest_content:
-            # Backup settings are explicitly set to false
             findings.append("\033[32m[*]\033[0m android:allowBackup=\"false\" attribute is explicitly set.")
         else:
-            # Backup settings are not explicitly set to false
             findings.append("\033[93m[*]\033[0m android:allowBackup=\"false\" attribute is not explicitly set. Consider setting it to prevent unauthorised data backups.")
         
-        # Check if both android:allowBackup="true" and android:debuggable="true" are present
         if 'android:allowBackup="true"' in manifest_content and debuggable:
             findings.append("\033[91mWARNING:\033[0m Backup Settings: Both android:allowBackup=\"true\" and android:debuggable=\"true\" are present. This configuration may pose security risks as it allows unauthorised data backups via adb when usb debugging is enabled.")
             
@@ -321,26 +304,19 @@ def check_backup_settings(findings, manifest_path, debuggable):
 
 def check_network_security(findings, manifest_path, output_dir):
     try:
-        # Read AndroidManifest.xml content
         with open(manifest_path, 'r') as manifest_file:
             manifest_content = manifest_file.read()
             findings.append("\033[93m\n Network Security:\033[0m")
 
-        # Check if network security configuration is defined
         if 'android:networkSecurityConfig="@xml/network_security_config"' in manifest_content:
-            # Network security configuration is defined
             findings.append("Custom network security configurations found.")
             
-            # Check if the network security configuration file exists
             network_security_config_path = os.path.join(output_dir, "resources", "res", "xml", "network_security_config.xml")
             if os.path.isfile(network_security_config_path):
-                # Network security configuration file exists
                 findings.append("Custom network security configuration file found: network_security_config.xml")
             else:
-                # Network security configuration file is missing
                 findings.append("\033[91mERROR:\033[0m Custom network security configuration file 'network_security_config.xml' is missing.")
         else:
-            # Network security configuration is not defined
             findings.append("Network Security: No custom network security configurations found in AndroidManifest.xml.")
 
     except Exception as e:
@@ -352,12 +328,10 @@ def extract_exported_activities(manifest_path):
     tree = ET.parse(manifest_path)
     root = tree.getroot()
 
-    # Iterate through all activity elements
     for activity in root.findall('.//activity'):
         activity_name = activity.get('{http://schemas.android.com/apk/res/android}name')
         exported = activity.get('{http://schemas.android.com/apk/res/android}exported')
         
-        # Check if the activity is exported
         if exported == 'true':
             exported_activities.append(activity_name)
 
@@ -369,21 +343,13 @@ def extract_exported_activities(manifest_path):
 @click.option('--output-file', '-of', type=click.Path(), help='Specify output file for analysis findings')
 
 def main(input_apk, output_dir, output_file):
-    print_title()  # Print the title
-    check_apksigner(input_apk)  # Check for apksigner availability
-    check_aapt() # Check for aapt
-
+    print_title()
+    check_apksigner(input_apk)
+    check_aapt()
     jadx_path = check_jadx()
-    # Check if output directory is provided, otherwise use current working directory
     output_dir = output_dir or os.getcwd()
-
-    # Check if output file is provided, otherwise use a default file
     output_file = output_file or 'analysis_findings.txt'
-
-    # Perform decompilation
     decompile_apk(input_apk, output_dir, jadx_path)
-
-    # Perform analysis
     analyze_apk(input_apk, output_file, output_dir)
 
 if __name__ == '__main__':
