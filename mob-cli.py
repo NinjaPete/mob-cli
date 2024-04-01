@@ -156,18 +156,18 @@ def analyze_apk(input_apk, output_file, output_dir):  # Add output_dir as an arg
         print("\033[32m[*]\033[0m","Android Versions Extracted.")  # Print section completion
         
         # Check for APK signing schemes using apksigner        
-        findings.append("")  # Add space
-        findings.append("\033[1;94mAPK Signing Schemes:\033[0m")  # Make APK Signing Schemes bold
+        findings.append("")
+        findings.append("\033[1;94mAPK Signing Schemes:\033[0m")
 
         apksigner_output = subprocess.check_output(["apksigner", "verify", "-verbose", input_apk], text=True)
         signing_schemes = extract_signing_schemes(apksigner_output)
 
         append_signing_schemes(findings, signing_schemes)
 
-        print("\033[32m[*]\033[0m","APK Signing Schemes Extracted.")  # Print section completion
+        print("\033[32m[*]\033[0m","APK Signing Schemes Extracted.")
 
         # Check for vulnerable Janus exploit
-        print("\033[32m[*]\033[0m","Checking for Janus Vulnerability...")  # Print section completion
+        print("\033[32m[*]\033[0m","Checking for Janus Vulnerability...")
         check_vulnerable_janus(findings, aapt_output, signing_schemes)
 
         # Extracted AndroidManifest.xml path
@@ -176,11 +176,14 @@ def analyze_apk(input_apk, output_file, output_dir):  # Add output_dir as an arg
         # Android Manifest Checks
         findings.append("")  # Add space
         findings.append("\033[1;94mAndroid Manifest Findings:\033[0m")
+        findings.append("\033[93m\n  General:\033[0m")
         debuggable = check_debuggable(findings, aapt_output)
+        check_backup_settings(findings, manifest_path, debuggable)
+        check_network_security(findings, manifest_path, output_dir)
 
         # Extract exported activities from AndroidManifest.xml
         exported_activities = extract_exported_activities(manifest_path)
-        findings.append("\n Exported Activities:")
+        findings.append("\033[93m\n Exported Activities:\033[0m")
         for activity in exported_activities:
             findings.append(activity)
 
@@ -289,10 +292,60 @@ def check_debuggable(findings, android_manifest):
     if debuggable_match:
         debuggable_value = debuggable_match.group(1)
         if debuggable_value.lower() == 'true':
-            findings.append("\033[91mWARNING: Debuggable set to true.\033[0m")
+            findings.append("\033[91m[*]Debuggable set to true.\033[0m")
             return True
-    findings.append("Debuggable set to false.")
+    findings.append("\033[32m[*]\033[0m Debuggable set to false.")
     return False
+
+def check_backup_settings(findings, manifest_path, debuggable):
+    try:
+        # Read AndroidManifest.xml content
+        with open(manifest_path, 'r') as manifest_file:
+            manifest_content = manifest_file.read()
+        
+        # Check if android:allowBackup="false" is explicitly set
+        if 'android:allowBackup="false"' in manifest_content:
+            # Backup settings are explicitly set to false
+            findings.append("\033[32m[*]\033[0m android:allowBackup=\"false\" attribute is explicitly set.")
+        else:
+            # Backup settings are not explicitly set to false
+            findings.append("\033[93m[*]\033[0m android:allowBackup=\"false\" attribute is not explicitly set. Consider setting it to prevent unauthorised data backups.")
+        
+        # Check if both android:allowBackup="true" and android:debuggable="true" are present
+        if 'android:allowBackup="true"' in manifest_content and debuggable:
+            findings.append("\033[91mWARNING:\033[0m Backup Settings: Both android:allowBackup=\"true\" and android:debuggable=\"true\" are present. This configuration may pose security risks as it allows unauthorised data backups via adb when usb debugging is enabled.")
+            
+    except Exception as e:
+        findings.append("\033[91mERROR:\033[0m Error occurred while checking backup settings.")
+        print(f"\033[91mError checking backup settings: {e}\033[0m")
+
+def check_network_security(findings, manifest_path, output_dir):
+    try:
+        # Read AndroidManifest.xml content
+        with open(manifest_path, 'r') as manifest_file:
+            manifest_content = manifest_file.read()
+            findings.append("\033[93m\n Network Security:\033[0m")
+
+        # Check if network security configuration is defined
+        if 'android:networkSecurityConfig="@xml/network_security_config"' in manifest_content:
+            # Network security configuration is defined
+            findings.append("Custom network security configurations found.")
+            
+            # Check if the network security configuration file exists
+            network_security_config_path = os.path.join(output_dir, "resources", "res", "xml", "network_security_config.xml")
+            if os.path.isfile(network_security_config_path):
+                # Network security configuration file exists
+                findings.append("Custom network security configuration file found: network_security_config.xml")
+            else:
+                # Network security configuration file is missing
+                findings.append("\033[91mERROR:\033[0m Custom network security configuration file 'network_security_config.xml' is missing.")
+        else:
+            # Network security configuration is not defined
+            findings.append("Network Security: No custom network security configurations found in AndroidManifest.xml.")
+
+    except Exception as e:
+        findings.append("\033[91mERROR:\033[0m Error occurred while checking network security configurations.")
+        print(f"\033[91mError checking network security configurations: {e}\033[0m")
 
 def extract_exported_activities(manifest_path):
     exported_activities = []
