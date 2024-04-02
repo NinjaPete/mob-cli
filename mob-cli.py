@@ -179,6 +179,22 @@ def analyze_apk(input_apk, output_file, output_dir):
         for activity in exported_activities:
             findings.append(activity)
 
+        manifest_path = os.path.join(output_dir, "resources", "AndroidManifest.xml")
+        findings.append("\033[93m\n Content Providers:\033[0m")
+
+        content_provider_findings = analyze_content_providers(manifest_path)
+        findings.extend(content_provider_findings)
+
+        print("\033[32m[*]\033[0m Content Providers Extracted.")
+
+        # Write findings to file
+        with open(output_file, 'w') as f:
+            f.write('\n'.join(findings))
+
+        # Optionally, print findings to the console
+        for finding in findings:
+            print(finding)
+
         print("\033[32m[*]\033[0m","Completed Android Manifest Checks")
 
         with open(output_file, 'w') as f:
@@ -246,7 +262,7 @@ def check_vulnerable_janus(findings, aapt_output, signing_schemes):
         elif 21 <= sdk_version <= 24 and signing_schemes["v1"] and any(signing_schemes[scheme] for scheme in ["v2", "v3", "v4"]):
             janus_warning = "\033[91m[*]\033[0m \033[91mWARNING:\033[0m The application may be vulnerable to the Janus exploit. It is signed with v1 and also v2, v3, or both schemes, and targets Android versions 5.0 to 7.0.\033"
             findings.append(janus_warning)
-            print(" \033[93m[*]\033[0m","\Possibly vulnerable to Janus (CVE-2017–13156)")
+            print(" \033[93m[*]\033[0m","Possibly vulnerable to Janus (CVE-2017–13156)")
 
 def map_sdk_version_to_android_version(sdk_version):
     android_versions = {
@@ -323,7 +339,10 @@ def check_network_security(findings, manifest_path, output_dir):
                 else:
                     findings.append("\033[32m[*]\033[0m Cleartext traffic is not permitted.")
                     
-                
+                    # Check if cleartext traffic is permitted for specific URLs
+                    if 'domain-config cleartextTrafficPermitted="true"' in ns_config_content:
+                        findings.append("\033[91m[*]\033[0m \033[91mWARNING:\033[0m Cleartext traffic is permitted for specific URLs. This can pose security risks, especially when transmitting sensitive data.")
+                    
             else:
                 findings.append("\033[91mERROR:\033[0m Custom network security configuration file 'network_security_config.xml' is missing.")
         else:
@@ -332,7 +351,6 @@ def check_network_security(findings, manifest_path, output_dir):
     except Exception as e:
         findings.append("\033[91mERROR:\033[0m Error occurred while checking network security configurations.")
         print(f"\033[91mError checking network security configurations: {e}\033[0m")
-
 
 def extract_exported_activities(manifest_path):
     exported_activities = []
@@ -347,6 +365,55 @@ def extract_exported_activities(manifest_path):
             exported_activities.append(activity_name)
 
     return exported_activities
+
+def extract_content_providers(manifest_path):
+    tree = ET.parse(manifest_path)
+    root = tree.getroot()
+    namespace = '{http://schemas.android.com/apk/res/android}'
+
+    providers = []
+    file_provider_note = "Note: Review the FileProvider's XML configuration for secure paths."
+
+    for provider in root.findall(".//provider"):
+        name = provider.attrib.get(f'{namespace}name', 'Unknown')
+        authorities = provider.attrib.get(f'{namespace}authorities', 'None specified')
+        exported = provider.attrib.get(f'{namespace}exported', 'false')
+        is_file_provider = "androidx.core.content.FileProvider" in name or "android.support.v4.content.FileProvider" in name
+
+        provider_info = {
+            "name": name,
+            "authorities": authorities,
+            "exported": exported == 'true',
+            "is_file_provider": is_file_provider,
+            "note": file_provider_note if is_file_provider else ""
+        }
+        providers.append(provider_info)
+
+    return providers
+
+def analyze_content_providers(manifest_path):
+    findings = []
+    exported_providers_warnings = []
+
+    content_providers = extract_content_providers(manifest_path)
+    if content_providers:
+        findings.append("Provider Names:")
+        for provider in content_providers:
+            asterisk_color = "\033[32m[*]\033[0m" if not provider["exported"] else "\033[33m[*]\033[0m"
+            provider_type = " (FileProvider)" if provider["is_file_provider"] else ""
+            findings.append(f"  {asterisk_color} {provider['name']}{provider_type}, Authorities: {provider['authorities']}")
+            if provider["exported"]:
+                exported_providers_warnings.append(f"[*] WARNING: {provider['name']} Exported set to True")
+            if provider["note"]:
+                findings.append(f"    {provider['note']}")
+    else:
+        findings.append("  No Content Providers found.")
+
+    # Append warnings for any exported content providers
+    if exported_providers_warnings:
+        findings.extend(["", *exported_providers_warnings])
+
+    return findings
 
 @click.command()
 @click.argument('input_apk', type=click.Path(exists=True, dir_okay=False))
