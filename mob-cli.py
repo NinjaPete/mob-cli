@@ -191,9 +191,9 @@ def analyze_apk(input_apk, output_file, output_dir):
         with open(output_file, 'w') as f:
             f.write('\n'.join(findings))
 
-        # Optionally, print findings to the console
-        for finding in findings:
-            print(finding)
+        manifest_path = os.path.join(output_dir, "resources", "AndroidManifest.xml")
+        br_and_url_findings = analyze_broadcast_receivers_and_url_schemes(manifest_path)
+        findings.extend(br_and_url_findings)
 
         print("\033[32m[*]\033[0m","Completed Android Manifest Checks")
 
@@ -202,6 +202,9 @@ def analyze_apk(input_apk, output_file, output_dir):
 
         for finding in findings:
             print(finding)
+
+        service_findings = analyze_exported_services(manifest_path)
+        findings.extend(service_findings)
 
     except Exception as e:
         print(f"\033[91mError during analysis: {e}\033[0m")
@@ -322,26 +325,31 @@ def check_network_security(findings, manifest_path, output_dir):
     try:
         with open(manifest_path, 'r') as manifest_file:
             manifest_content = manifest_file.read()
-            findings.append("\033[93m\n Network Security:\033[0m")
+            findings.append("\nNetwork Security:")
 
         if 'android:networkSecurityConfig="@xml/network_security_config"' in manifest_content:
             findings.append("Custom network security configurations found.")
-            
             network_security_config_path = os.path.join(output_dir, "resources", "res", "xml", "network_security_config.xml")
             if os.path.isfile(network_security_config_path):
                 findings.append("Custom network security configuration file found: network_security_config.xml")
                 
-                with open(network_security_config_path, 'r') as ns_config_file:
-                    ns_config_content = ns_config_file.read()
+                tree = ET.parse(network_security_config_path)
+                root = tree.getroot()
                 
-                if 'cleartextTrafficPermitted="true"' in ns_config_content:
-                    findings.append("\033[91m[*]\033[0m \033[91mWARNING:\033[0m Cleartext traffic is permitted. This can pose security risks, especially when transmitting sensitive data.")
-                else:
-                    findings.append("\033[32m[*]\033[0m Cleartext traffic is not permitted.")
-                    
-                    # Check if cleartext traffic is permitted for specific URLs
-                    if 'domain-config cleartextTrafficPermitted="true"' in ns_config_content:
-                        findings.append("\033[91m[*]\033[0m \033[91mWARNING:\033[0m Cleartext traffic is permitted for specific URLs. This can pose security risks, especially when transmitting sensitive data.")
+                # Global cleartextTrafficPermitted setting under <base-config>
+                base_config = root.find(".//base-config")
+                if base_config is not None:
+                    global_cleartext = base_config.get('cleartextTrafficPermitted')
+                    if global_cleartext == "true":
+                        findings.append("\033[91m[*]\033[0m \033[91mWARNING:\033[0m Global cleartext traffic is permitted (base-config).")
+                
+                # Check each <domain-config> for cleartextTrafficPermitted
+                for domain_config in root.findall(".//domain-config"):
+                    domain_cleartext = domain_config.get('cleartextTrafficPermitted')
+                    domain_names = [domain.text for domain in domain_config.findall(".//domain")]
+                    domain_names_str = ", ".join(domain_names) if domain_names else "Unknown"
+                    if domain_cleartext == "true":
+                        findings.append(f"\033[91m[*]\033[0m \033[91mWARNING:\033[0m Cleartext traffic permitted for domain(s): {domain_names_str} (domain-config).")
                     
             else:
                 findings.append("\033[91mERROR:\033[0m Custom network security configuration file 'network_security_config.xml' is missing.")
@@ -393,25 +401,108 @@ def extract_content_providers(manifest_path):
 
 def analyze_content_providers(manifest_path):
     findings = []
-    exported_providers_warnings = []
+    namespace = '{http://schemas.android.com/apk/res/android}'
+    tree = ET.parse(manifest_path)
+    root = tree.getroot()
 
-    content_providers = extract_content_providers(manifest_path)
-    if content_providers:
-        findings.append("Provider Names:")
-        for provider in content_providers:
-            asterisk_color = "\033[32m[*]\033[0m" if not provider["exported"] else "\033[33m[*]\033[0m"
-            provider_type = " (FileProvider)" if provider["is_file_provider"] else ""
-            findings.append(f"  {asterisk_color} {provider['name']}{provider_type}, Authorities: {provider['authorities']}")
-            if provider["exported"]:
-                exported_providers_warnings.append(f"[*] WARNING: {provider['name']} Exported set to True")
-            if provider["note"]:
-                findings.append(f"    {provider['note']}")
-    else:
-        findings.append("  No Content Providers found.")
+    findings.append("\nContent Providers:")
+    providers = root.findall(".//provider")
+    for provider in providers:
+        name = provider.attrib.get(f'{namespace}name')
+        authorities = provider.attrib.get(f'{namespace}authorities')
+        exported = provider.attrib.get(f'{namespace}exported', 'false')
+        permission = provider.attrib.get(f'{namespace}permission', None)  # Ensure permission is defined
+        grantUriPermissions = provider.attrib.get(f'{namespace}grantUriPermissions', 'false')
+        is_file_provider = "FileProvider" in name or "android.support.v4.content.FileProvider" in name
+        
+        export_status = "Exported" if exported == "true" else "Not Exported"
+        findings.append(f"  {export_status} Content Provider: {name}")
+        findings.append(f"    - Authorities: {authorities}")
+        if permission:  # Check if permission variable is not None
+            findings.append(f"    - Protected by permission: {permission}")
+        if is_file_provider:
+            findings.append("    - Type: FileProvider")
+            findings.append("      Note: Review the FileProvider's XML configuration for secure paths.")
+        if grantUriPermissions == "true":
+            findings.append("    - Grant URI permissions: Yes")
 
-    # Append warnings for any exported content providers
-    if exported_providers_warnings:
-        findings.extend(["", *exported_providers_warnings])
+    return findings
+
+
+def analyze_broadcast_receivers_and_url_schemes(manifest_path):
+    findings = []
+    namespace = "{http://schemas.android.com/apk/res/android}"
+    standard_schemes = {"http", "https"}
+
+    tree = ET.parse(manifest_path)
+    root = tree.getroot()
+
+    # Broadcast Receivers Analysis
+    findings.append("\nBroadcast Receivers Analysis:")
+    receivers = root.findall(".//receiver")
+    for receiver in receivers:
+        receiver_name = receiver.attrib.get(f"{namespace}name")
+        exported = receiver.attrib.get(f"{namespace}exported", "false")
+        permission = receiver.attrib.get(f"{namespace}permission")
+        
+        export_status = "Exported" if exported == "true" else "Not Exported"
+        findings.append(f"  {export_status} Broadcast Receiver found: {receiver_name}")
+        if permission:
+            findings.append(f"    - Requires permission: {permission}")
+
+        # Intent filter actions and categories
+        intent_filters = receiver.findall(".//intent-filter")
+        for intent_filter in intent_filters:
+            actions = intent_filter.findall(".//action")
+            for action in actions:
+                action_name = action.attrib.get(f"{namespace}name", "None")
+                findings.append(f"    - Responds to action: {action_name}")
+            categories = intent_filter.findall(".//category")
+            for category in categories:
+                category_name = category.attrib.get(f"{namespace}name", "None")
+                findings.append(f"    - In category: {category_name}")
+
+    # URL Schemes Analysis
+    findings.append("\nURL Schemes Analysis:")
+    activities = root.findall(".//activity")
+    for activity in activities:
+        activity_name = activity.attrib.get(f"{namespace}name")
+        intent_filters = activity.findall(".//intent-filter")
+        for intent_filter in intent_filters:
+            data_elements = intent_filter.findall(".//data")
+            if not data_elements:
+                findings.append(f"    - Activity {activity_name} has an intent filter without specific data, which could be overly broad.")
+            for data_element in data_elements:
+                scheme = data_element.attrib.get(f"{namespace}scheme")
+                if scheme:
+                    if scheme in standard_schemes:
+                        findings.append(f"    - Activity {activity_name} handles standard URL scheme: {scheme}")
+                    else:
+                        findings.append(f"    - Activity {activity_name} handles custom URL scheme: {scheme}")
+
+    return findings
+
+    return findings
+
+def analyze_exported_services(manifest_path):
+    findings = []
+    namespace = '{http://schemas.android.com/apk/res/android}'
+
+    tree = ET.parse(manifest_path)
+    root = tree.getroot()
+    services = root.findall(".//service")
+
+    for service in services:
+        name = service.get(f'{namespace}name')
+        exported = service.get(f'{namespace}exported', 'false')
+        permission = service.get(f'{namespace}permission')
+
+        if exported == 'true':
+            findings.append(f"WARNING: Exported Service found: {name}")
+            if permission:
+                findings.append(f"    - Protected by permission: {permission}")
+            else:
+                findings.append(f"    - No permission required, potentially insecure.")
 
     return findings
 
